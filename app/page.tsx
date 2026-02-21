@@ -105,37 +105,29 @@ export default function PriceCalculator() {
     });
   }, []);
 
-  const calculatePrices = useCallback(() => {
+      const calculatePrices = useCallback(() => {
     const calculated = data.map(row => {
+      const currentPrice = row.current_price || 0;
+      
+      // Increase current price by target %
+      const increaseMultiplier = 1 + (marginTarget / 100);
+      const newPrice = Math.round(currentPrice * increaseMultiplier * 100) / 100;
+      
+      // Calculate margin based on new price vs cost
       const cost = row.cost_price || 0;
-      let newPrice = row.current_price;
-      
-      if (cost === 0) {
-        return { ...row, new_price: row.current_price, margin_percent: 0, price_change: 0 };
-      }
-      
-      if (markupType === 'margin') {
-        newPrice = cost / (1 - marginTarget / 100);
-      } else {
-        newPrice = cost * (1 + marginTarget / 100);
-      }
-
-      newPrice = Math.round(newPrice * 100) / 100;
-      
-      const marginAmount = newPrice - cost;
-      const marginPercent = newPrice > 0 ? (marginAmount / newPrice) * 100 : 0;
+      const marginPercent = newPrice > 0 ? ((newPrice - cost) / newPrice) * 100 : 0;
       
       return {
         ...row,
         new_price: newPrice,
         margin_percent: Math.round(marginPercent * 100) / 100,
-        price_change: Math.round((newPrice - row.current_price) * 100) / 100,
+        price_change: Math.round((newPrice - currentPrice) * 100) / 100,
         new_price_shopify: newPrice.toFixed(2)
       };
     });
     
     setData(calculated);
-  }, [data, marginTarget, markupType]);
+  }, [data, marginTarget]);
 
   const downloadCSV = useCallback(() => {
     const csv = Papa.unparse(data);
@@ -249,7 +241,9 @@ export default function PriceCalculator() {
               <div className="grid md:grid-cols-3 gap-6 items-end">
                 
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-2">Calculation Method</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+  Price Increase (%)
+</label>
                   <div className="flex bg-slate-100 p-1 rounded-lg">
                     <button
                       onClick={() => setMarkupType('margin')}
