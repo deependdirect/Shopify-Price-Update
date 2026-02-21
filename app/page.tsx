@@ -32,7 +32,6 @@ export default function PriceCalculator() {
 
   const cleanNumber = (value: any): number => {
     if (!value) return 0;
-    // Remove $, commas, spaces, and quotes
     const cleaned = String(value).replace(/[$,\s"']/g, '');
     const num = parseFloat(cleaned);
     return isNaN(num) ? 0 : num;
@@ -53,19 +52,16 @@ export default function PriceCalculator() {
           return;
         }
 
-        // Get actual column names from first row
         const firstRow = parsed[0];
         const columns = Object.keys(firstRow);
         
         console.log('All columns found:', columns);
 
-        // Shopify column names (exact matches from your export)
         const skuField = 'Variant SKU';
         const priceField = 'Variant Price';
         const costField = 'Cost per item';
         const titleField = 'Title';
 
-        // Check if required columns exist
         const missingColumns = [];
         if (!columns.includes(skuField)) missingColumns.push(skuField);
         if (!columns.includes(priceField)) missingColumns.push(priceField);
@@ -105,7 +101,7 @@ export default function PriceCalculator() {
       header: true,
       dynamicTyping: false,
       skipEmptyLines: true,
-      transformHeader: (header: string) => header.trim() // Trim whitespace from headers
+      transformHeader: (header: string) => header.trim()
     });
   }, []);
 
@@ -189,7 +185,6 @@ export default function PriceCalculator() {
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-4 md:p-8">
       <div className="max-w-6xl mx-auto space-y-6">
         
-        {/* Header */}
         <div className="bg-white rounded-2xl shadow-lg p-8 border border-slate-200">
           <div className="flex items-center justify-between flex-wrap gap-4">
             <div className="flex items-center gap-3">
@@ -213,7 +208,6 @@ export default function PriceCalculator() {
           </div>
         </div>
 
-        {/* Error Message */}
         {error && (
           <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-center gap-3 text-red-700">
             <AlertCircle className="w-5 h-5 flex-shrink-0" />
@@ -224,7 +218,6 @@ export default function PriceCalculator() {
           </div>
         )}
 
-        {/* Upload Section */}
         {data.length === 0 ? (
           <div className="bg-white rounded-2xl shadow-lg p-8 border-2 border-dashed border-slate-300 hover:border-blue-500 transition-colors">
             <label className="flex flex-col items-center justify-center cursor-pointer space-y-4">
@@ -252,7 +245,6 @@ export default function PriceCalculator() {
           </div>
         ) : (
           <>
-            {/* Controls */}
             <div className="bg-white rounded-2xl shadow-lg p-6 border border-slate-200">
               <div className="grid md:grid-cols-3 gap-6 items-end">
                 
@@ -325,7 +317,6 @@ export default function PriceCalculator() {
               )}
             </div>
 
-            {/* Download Buttons */}
             {data[0]?.new_price && (
               <div className="flex flex-wrap gap-4">
                 <button
@@ -345,7 +336,6 @@ export default function PriceCalculator() {
               </div>
             )}
 
-            {/* Data Preview */}
             <div className="bg-white rounded-2xl shadow-lg overflow-hidden border border-slate-200">
               <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
                 <div className="flex items-center gap-2">
