@@ -30,6 +30,14 @@ export default function PriceCalculator() {
     setError('');
   }, []);
 
+  const cleanNumber = (value: any): number => {
+    if (!value) return 0;
+    // Remove $, commas, spaces, and quotes
+    const cleaned = String(value).replace(/[$,\s"']/g, '');
+    const num = parseFloat(cleaned);
+    return isNaN(num) ? 0 : num;
+  };
+
   const handleFileUpload = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -45,62 +53,59 @@ export default function PriceCalculator() {
           return;
         }
 
-        // Detect Shopify column names
+        // Get actual column names from first row
         const firstRow = parsed[0];
         const columns = Object.keys(firstRow);
         
-        console.log('Detected columns:', columns); // For debugging
+        console.log('All columns found:', columns);
 
-        // Map Shopify headers to our fields
-        const skuField = columns.find(col => 
-          col.toLowerCase().includes('sku') || 
-          col.toLowerCase().includes('variant sku')
-        ) || 'sku';
+        // Shopify column names (exact matches from your export)
+        const skuField = 'Variant SKU';
+        const priceField = 'Variant Price';
+        const costField = 'Cost per item';
+        const titleField = 'Title';
 
-        const priceField = columns.find(col => 
-          col.toLowerCase().includes('price') || 
-          col.toLowerCase().includes('variant price')
-        ) || 'price';
-
-        const costField = columns.find(col => 
-          col.toLowerCase().includes('cost') || 
-          col.toLowerCase().includes('cost per item')
-        ) || 'cost';
-
-        const titleField = columns.find(col => 
-          col.toLowerCase().includes('title') || 
-          col.toLowerCase().includes('product title')
-        ) || 'title';
+        // Check if required columns exist
+        const missingColumns = [];
+        if (!columns.includes(skuField)) missingColumns.push(skuField);
+        if (!columns.includes(priceField)) missingColumns.push(priceField);
+        
+        if (missingColumns.length > 0) {
+          setError(`Missing columns: ${missingColumns.join(', ')}. Found: ${columns.join(', ')}`);
+          return;
+        }
 
         setHeaders(columns);
         
         const processed = parsed.map((row: any, index: number) => {
-          const rawPrice = row[priceField] || row['Variant Price'] || row['Price'] || 0;
-          const rawCost = row[costField] || row['Cost per item'] || row['Cost'] || 0;
-          
-          // Clean price values (remove $, commas)
-          const cleanPrice = parseFloat(String(rawPrice).replace(/[$,]/g, '')) || 0;
-          const cleanCost = parseFloat(String(rawCost).replace(/[$,]/g, '')) || 0;
+          const rawPrice = row[priceField];
+          const rawCost = row[costField];
+          const rawSku = row[skuField];
+          const rawTitle = row[titleField];
+
+          const cleanPrice = cleanNumber(rawPrice);
+          const cleanCost = cleanNumber(rawCost);
 
           return {
             ...row,
-            sku: row[skuField] || row['Variant SKU'] || `ROW-${index + 1}`,
-            title: row[titleField] || row['Title'] || 'Unknown Product',
+            sku: rawSku ? String(rawSku).trim() : `ROW-${index + 1}`,
+            title: rawTitle ? String(rawTitle).trim() : 'Unknown Product',
             current_price: cleanPrice,
             cost_price: cleanCost,
           };
-        }).filter(row => row.sku && row.sku !== 'ROW-'); // Remove empty rows
+        }).filter(row => row.sku && !row.sku.startsWith('ROW-'));
 
         if (processed.length === 0) {
-          setError('No valid products found. Check your CSV format.');
+          setError('No valid products found. Check your CSV has data in the Variant SKU column.');
           return;
         }
 
         setData(processed);
       },
       header: true,
-      dynamicTyping: false, // Keep as strings to clean manually
-      skipEmptyLines: true
+      dynamicTyping: false,
+      skipEmptyLines: true,
+      transformHeader: (header: string) => header.trim() // Trim whitespace from headers
     });
   }, []);
 
@@ -151,7 +156,7 @@ export default function PriceCalculator() {
 
   const downloadShopifyFormat = useCallback(() => {
     const shopifyData = data.map(row => ({
-      Handle: row.handle || row.sku?.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+      Handle: row.Handle || row.sku?.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
       Title: row.title,
       'Variant SKU': row.sku,
       'Variant Price': row.new_price_shopify || row.new_price,
@@ -186,7 +191,7 @@ export default function PriceCalculator() {
         
         {/* Header */}
         <div className="bg-white rounded-2xl shadow-lg p-8 border border-slate-200">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between flex-wrap gap-4">
             <div className="flex items-center gap-3">
               <div className="bg-blue-600 p-3 rounded-xl">
                 <Calculator className="w-8 h-8 text-white" />
@@ -199,10 +204,10 @@ export default function PriceCalculator() {
             {data.length > 0 && (
               <button
                 onClick={resetAll}
-                className="flex items-center gap-2 px-4 py-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"
+                className="flex items-center gap-2 px-4 py-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors border border-slate-300"
               >
                 <RotateCcw className="w-5 h-5" />
-                Reset
+                Upload New File
               </button>
             )}
           </div>
@@ -212,7 +217,10 @@ export default function PriceCalculator() {
         {error && (
           <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-center gap-3 text-red-700">
             <AlertCircle className="w-5 h-5 flex-shrink-0" />
-            <p>{error}</p>
+            <div>
+              <p className="font-semibold">Error reading CSV</p>
+              <p className="text-sm">{error}</p>
+            </div>
           </div>
         )}
 
@@ -224,21 +232,21 @@ export default function PriceCalculator() {
                 <Upload className="w-12 h-12 text-blue-600" />
               </div>
               <div className="text-center">
-                <p className="text-lg font-semibold text-slate-900">Drop your CSV file here</p>
-                <p className="text-sm text-slate-500">Supports Shopify exports, inventory reports, price lists</p>
-                <div className="mt-4 p-4 bg-slate-50 rounded-lg text-left text-xs text-slate-600 space-y-1">
-                  <p className="font-semibold">Expected columns (auto-detected):</p>
-                  <ul className="list-disc list-inside space-y-1 ml-2">
-                    <li>SKU: "Variant SKU", "SKU"</li>
-                    <li>Price: "Variant Price", "Price"</li>
-                    <li>Cost: "Cost per item", "Cost"</li>
-                    <li>Title: "Title", "Product Title"</li>
+                <p className="text-lg font-semibold text-slate-900">Drop your Shopify CSV file here</p>
+                <p className="text-sm text-slate-500">Export: Products → Export → Current selection</p>
+                <div className="mt-4 p-4 bg-slate-50 rounded-lg text-left text-xs text-slate-600 space-y-1 max-w-md mx-auto">
+                  <p className="font-semibold">Required columns (must match exactly):</p>
+                  <ul className="list-disc list-inside space-y-1 ml-2 font-mono text-xs">
+                    <li>Variant SKU</li>
+                    <li>Variant Price</li>
+                    <li>Cost per item</li>
+                    <li>Title</li>
                   </ul>
                 </div>
               </div>
               <input type="file" accept=".csv" onChange={handleFileUpload} className="hidden" />
               <button className="bg-blue-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-blue-700 transition-colors">
-                Select File
+                Select CSV File
               </button>
             </label>
           </div>
@@ -309,9 +317,9 @@ export default function PriceCalculator() {
                     <p className="text-xs text-blue-600 uppercase font-semibold">Price Increases</p>
                     <p className="text-2xl font-bold text-blue-700">{stats.priceIncreases}</p>
                   </div>
-                  <div className="bg-red-50 p-4 rounded-xl">
-                    <p className="text-xs text-red-600 uppercase font-semibold">No Cost Set</p>
-                    <p className="text-2xl font-bold text-red-700">{stats.zeroCost}</p>
+                  <div className="bg-amber-50 p-4 rounded-xl">
+                    <p className="text-xs text-amber-600 uppercase font-semibold">No Cost Set</p>
+                    <p className="text-2xl font-bold text-amber-700">{stats.zeroCost}</p>
                   </div>
                 </div>
               )}
@@ -350,10 +358,10 @@ export default function PriceCalculator() {
                 <table className="w-full text-sm">
                   <thead className="bg-slate-100 sticky top-0">
                     <tr>
-                      <th className="px-4 py-3 text-left font-semibold text-slate-700">SKU</th>
+                      <th className="px-4 py-3 text-left font-semibold text-slate-700">Variant SKU</th>
                       <th className="px-4 py-3 text-left font-semibold text-slate-700">Title</th>
                       <th className="px-4 py-3 text-right font-semibold text-slate-700">Cost</th>
-                      <th className="px-4 py-3 text-right font-semibold text-slate-700">Current</th>
+                      <th className="px-4 py-3 text-right font-semibold text-slate-700">Current Price</th>
                       {data[0]?.new_price && (
                         <>
                           <th className="px-4 py-3 text-right font-semibold text-blue-700 bg-blue-50">New Price</th>
