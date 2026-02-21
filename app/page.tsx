@@ -105,13 +105,29 @@ export default function PriceCalculator() {
     });
   }, []);
 
-      const calculatePrices = useCallback(() => {
+        const calculatePrices = useCallback(() => {
+    const roundPrice = (price: number): number => {
+      const dollars = Math.floor(price);
+      const cents = Math.round((price - dollars) * 100);
+      
+      if (cents >= 50) {
+        // Round up to .99
+        return dollars + 0.99;
+      } else {
+        // Round to .50
+        return dollars + 0.50;
+      }
+    };
+
     const calculated = data.map(row => {
       const currentPrice = row.current_price || 0;
       
       // Increase current price by target %
       const increaseMultiplier = 1 + (marginTarget / 100);
-      const newPrice = Math.round(currentPrice * increaseMultiplier * 100) / 100;
+      const calculatedPrice = currentPrice * increaseMultiplier;
+      
+      // Apply rounding rules
+      const newPrice = roundPrice(calculatedPrice);
       
       // Calculate margin based on new price vs cost
       const cost = row.cost_price || 0;
@@ -128,7 +144,6 @@ export default function PriceCalculator() {
     
     setData(calculated);
   }, [data, marginTarget]);
-
   const downloadCSV = useCallback(() => {
     const csv = Papa.unparse(data);
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
