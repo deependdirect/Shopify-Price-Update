@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from 'react';
 import Papa from 'papaparse';
-import { Upload, Download, Calculator, TrendingUp, DollarSign, AlertCircle, FileSpreadsheet } from 'lucide-react';
+import { Upload, Download, Calculator, TrendingUp, FileSpreadsheet, RotateCcw, AlertCircle } from 'lucide-react';
 
 interface ProductRow {
   sku: string;
@@ -21,28 +21,85 @@ export default function PriceCalculator() {
   const [marginTarget, setMarginTarget] = useState<number>(40);
   const [markupType, setMarkupType] = useState<'margin' | 'markup'>('margin');
   const [originalFileName, setOriginalFileName] = useState<string>('');
+  const [error, setError] = useState<string>('');
+
+  const resetAll = useCallback(() => {
+    setData([]);
+    setHeaders([]);
+    setOriginalFileName('');
+    setError('');
+  }, []);
 
   const handleFileUpload = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
     
+    setError('');
     setOriginalFileName(file.name.replace('.csv', ''));
 
     Papa.parse(file, {
       complete: (results) => {
         const parsed = results.data as any[];
-        if (parsed.length > 0) {
-          setHeaders(Object.keys(parsed[0]));
-          const processed = parsed.map((row: any) => ({
-            ...row,
-            current_price: parseFloat(row.price || row.current_price || 0),
-            cost_price: parseFloat(row.cost || row.cost_price || 0),
-          }));
-          setData(processed);
+        if (parsed.length === 0) {
+          setError('CSV file is empty');
+          return;
         }
+
+        // Detect Shopify column names
+        const firstRow = parsed[0];
+        const columns = Object.keys(firstRow);
+        
+        console.log('Detected columns:', columns); // For debugging
+
+        // Map Shopify headers to our fields
+        const skuField = columns.find(col => 
+          col.toLowerCase().includes('sku') || 
+          col.toLowerCase().includes('variant sku')
+        ) || 'sku';
+
+        const priceField = columns.find(col => 
+          col.toLowerCase().includes('price') || 
+          col.toLowerCase().includes('variant price')
+        ) || 'price';
+
+        const costField = columns.find(col => 
+          col.toLowerCase().includes('cost') || 
+          col.toLowerCase().includes('cost per item')
+        ) || 'cost';
+
+        const titleField = columns.find(col => 
+          col.toLowerCase().includes('title') || 
+          col.toLowerCase().includes('product title')
+        ) || 'title';
+
+        setHeaders(columns);
+        
+        const processed = parsed.map((row: any, index: number) => {
+          const rawPrice = row[priceField] || row['Variant Price'] || row['Price'] || 0;
+          const rawCost = row[costField] || row['Cost per item'] || row['Cost'] || 0;
+          
+          // Clean price values (remove $, commas)
+          const cleanPrice = parseFloat(String(rawPrice).replace(/[$,]/g, '')) || 0;
+          const cleanCost = parseFloat(String(rawCost).replace(/[$,]/g, '')) || 0;
+
+          return {
+            ...row,
+            sku: row[skuField] || row['Variant SKU'] || `ROW-${index + 1}`,
+            title: row[titleField] || row['Title'] || 'Unknown Product',
+            current_price: cleanPrice,
+            cost_price: cleanCost,
+          };
+        }).filter(row => row.sku && row.sku !== 'ROW-'); // Remove empty rows
+
+        if (processed.length === 0) {
+          setError('No valid products found. Check your CSV format.');
+          return;
+        }
+
+        setData(processed);
       },
       header: true,
-      dynamicTyping: true,
+      dynamicTyping: false, // Keep as strings to clean manually
       skipEmptyLines: true
     });
   }, []);
@@ -51,6 +108,10 @@ export default function PriceCalculator() {
     const calculated = data.map(row => {
       const cost = row.cost_price || 0;
       let newPrice = row.current_price;
+      
+      if (cost === 0) {
+        return { ...row, new_price: row.current_price, margin_percent: 0, price_change: 0 };
+      }
       
       if (markupType === 'margin') {
         newPrice = cost / (1 - marginTarget / 100);
@@ -115,26 +176,48 @@ export default function PriceCalculator() {
       ? (data.reduce((acc, row) => acc + (row.margin_percent || 0), 0) / data.length).toFixed(1)
       : 0,
     priceIncreases: data.filter(row => (row.price_change || 0) > 0).length,
-    priceDecreases: data.filter(row => (row.price_change || 0) < 0).length
+    priceDecreases: data.filter(row => (row.price_change || 0) < 0).length,
+    zeroCost: data.filter(row => (row.cost_price || 0) === 0).length
   };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-4 md:p-8">
       <div className="max-w-6xl mx-auto space-y-6">
         
+        {/* Header */}
         <div className="bg-white rounded-2xl shadow-lg p-8 border border-slate-200">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="bg-blue-600 p-3 rounded-xl">
-              <Calculator className="w-8 h-8 text-white" />
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="bg-blue-600 p-3 rounded-xl">
+                <Calculator className="w-8 h-8 text-white" />
+              </div>
+              <div>
+                <h1 className="text-3xl font-bold text-slate-900">Bulk Price Update Calculator</h1>
+                <p className="text-slate-600">Upload your Shopify/retail CSV, set target margins, download ready-to-import prices</p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-3xl font-bold text-slate-900">Bulk Price Update Calculator</h1>
-              <p className="text-slate-600">Upload your Shopify/retail CSV, set target margins, download ready-to-import prices</p>
-            </div>
+            {data.length > 0 && (
+              <button
+                onClick={resetAll}
+                className="flex items-center gap-2 px-4 py-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"
+              >
+                <RotateCcw className="w-5 h-5" />
+                Reset
+              </button>
+            )}
           </div>
         </div>
 
-        {data.length === 0 && (
+        {/* Error Message */}
+        {error && (
+          <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-center gap-3 text-red-700">
+            <AlertCircle className="w-5 h-5 flex-shrink-0" />
+            <p>{error}</p>
+          </div>
+        )}
+
+        {/* Upload Section */}
+        {data.length === 0 ? (
           <div className="bg-white rounded-2xl shadow-lg p-8 border-2 border-dashed border-slate-300 hover:border-blue-500 transition-colors">
             <label className="flex flex-col items-center justify-center cursor-pointer space-y-4">
               <div className="bg-blue-50 p-4 rounded-full">
@@ -143,7 +226,15 @@ export default function PriceCalculator() {
               <div className="text-center">
                 <p className="text-lg font-semibold text-slate-900">Drop your CSV file here</p>
                 <p className="text-sm text-slate-500">Supports Shopify exports, inventory reports, price lists</p>
-                <p className="text-xs text-slate-400 mt-2">Required columns: sku, price/current_price, cost/cost_price</p>
+                <div className="mt-4 p-4 bg-slate-50 rounded-lg text-left text-xs text-slate-600 space-y-1">
+                  <p className="font-semibold">Expected columns (auto-detected):</p>
+                  <ul className="list-disc list-inside space-y-1 ml-2">
+                    <li>SKU: "Variant SKU", "SKU"</li>
+                    <li>Price: "Variant Price", "Price"</li>
+                    <li>Cost: "Cost per item", "Cost"</li>
+                    <li>Title: "Title", "Product Title"</li>
+                  </ul>
+                </div>
               </div>
               <input type="file" accept=".csv" onChange={handleFileUpload} className="hidden" />
               <button className="bg-blue-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-blue-700 transition-colors">
@@ -151,12 +242,12 @@ export default function PriceCalculator() {
               </button>
             </label>
           </div>
-        )}
-
-        {data.length > 0 && (
+        ) : (
           <>
+            {/* Controls */}
             <div className="bg-white rounded-2xl shadow-lg p-6 border border-slate-200">
               <div className="grid md:grid-cols-3 gap-6 items-end">
+                
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-2">Calculation Method</label>
                   <div className="flex bg-slate-100 p-1 rounded-lg">
@@ -219,13 +310,14 @@ export default function PriceCalculator() {
                     <p className="text-2xl font-bold text-blue-700">{stats.priceIncreases}</p>
                   </div>
                   <div className="bg-red-50 p-4 rounded-xl">
-                    <p className="text-xs text-red-600 uppercase font-semibold">Price Decreases</p>
-                    <p className="text-2xl font-bold text-red-700">{stats.priceDecreases}</p>
+                    <p className="text-xs text-red-600 uppercase font-semibold">No Cost Set</p>
+                    <p className="text-2xl font-bold text-red-700">{stats.zeroCost}</p>
                   </div>
                 </div>
               )}
             </div>
 
+            {/* Download Buttons */}
             {data[0]?.new_price && (
               <div className="flex flex-wrap gap-4">
                 <button
@@ -242,19 +334,17 @@ export default function PriceCalculator() {
                   <Download className="w-5 h-5" />
                   Download Shopify Format
                 </button>
-                <button
-                  onClick={() => { setData([]); setHeaders([]); }}
-                  className="flex-1 md:flex-none bg-white text-slate-700 border-2 border-slate-300 px-6 py-3 rounded-xl font-semibold hover:bg-slate-50 transition-all"
-                >
-                  Upload New File
-                </button>
               </div>
             )}
 
+            {/* Data Preview */}
             <div className="bg-white rounded-2xl shadow-lg overflow-hidden border border-slate-200">
-              <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center gap-2">
-                <AlertCircle className="w-5 h-5 text-slate-500" />
-                <span className="text-sm text-slate-600">Preview: First 50 rows shown</span>
+              <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="w-5 h-5 text-slate-500" />
+                  <span className="text-sm text-slate-600">Preview: First 50 rows shown</span>
+                </div>
+                <span className="text-xs text-slate-500">{stats.total} total products</span>
               </div>
               <div className="overflow-x-auto max-h-96">
                 <table className="w-full text-sm">
@@ -288,8 +378,12 @@ export default function PriceCalculator() {
                             <td className="px-4 py-3 text-right font-mono text-green-700 bg-green-50/50">
                               {row.margin_percent?.toFixed(1)}%
                             </td>
-                            <td className={`px-4 py-3 text-right font-mono ${(row.price_change || 0) > 0 ? 'text-red-600' : (row.price_change || 0) < 0 ? 'text-green-600' : 'text-slate-600'}`}>
-                              {row.price_change && row.price_change > 0 ? '+' : ''}${row.price_change?.toFixed(2)}
+                            <td className={`px-4 py-3 text-right font-mono ${
+                              (row.price_change || 0) > 0 ? 'text-red-600' : 
+                              (row.price_change || 0) < 0 ? 'text-green-600' : 'text-slate-600'
+                            }`}>
+                              {row.price_change && row.price_change > 0 ? '+' : ''}
+                              ${row.price_change?.toFixed(2)}
                             </td>
                           </>
                         )}
